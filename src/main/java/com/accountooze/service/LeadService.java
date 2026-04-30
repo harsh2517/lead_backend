@@ -1,12 +1,18 @@
 package com.accountooze.service;
 
+import com.accountooze.exception.UserException;
 import com.accountooze.model.Lead;
 import com.accountooze.repo.LeadRepo;
+import com.accountooze.request.BulkLeadEditRequest;
 import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVParser;
 import org.apache.commons.csv.CSVRecord;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
@@ -40,11 +46,7 @@ public class LeadService {
 
             value = value.trim();
 
-            if (value.isEmpty()
-                    || value.equalsIgnoreCase("null")
-                    || value.equalsIgnoreCase("na")
-                    || value.equalsIgnoreCase("n/a")
-                    || value.equals("-")) {
+            if (value.isEmpty() || value.equalsIgnoreCase("null") || value.equalsIgnoreCase("na") || value.equalsIgnoreCase("n/a") || value.equals("-")) {
                 return null;
             }
 
@@ -55,11 +57,7 @@ public class LeadService {
         }
     }
 
-    public List<Lead> parseFileToLead(
-            MultipartFile file,
-            List<String> columns,
-            Long loginUserId
-    ) throws IOException {
+    public List<Lead> parseFileToLead(MultipartFile file, List<String> columns, Long loginUserId) throws IOException {
 
         if (columns == null || columns.size() < 14) {
             throw new RuntimeException("Please map all required columns");
@@ -67,34 +65,13 @@ public class LeadService {
 
         List<Lead> list = new ArrayList<>();
 
-        List<String> existingEmails = leadRepo.findAllEmails();
-        Set<String> existingEmailSet = existingEmails.stream()
-                .filter(e -> e != null)
-                .map(String::toLowerCase)
-                .collect(Collectors.toSet());
+        List<String> existingEmails = leadRepo.findAllEmails(loginUserId);
+        Set<String> existingEmailSet = existingEmails.stream().filter(e -> e != null).map(String::toLowerCase).collect(Collectors.toSet());
         Set<String> csvEmailSet = new HashSet<>();
 
-        try (
-                Reader reader = new InputStreamReader(file.getInputStream());
-                CSVParser parser = CSVFormat.DEFAULT
-                        .builder()
-                        .setHeader()
-                        .setSkipHeaderRecord(true)
-                        .setIgnoreSurroundingSpaces(true)
-                        .setTrim(true)
-                        .setQuote('"')
-                        .build()
-                        .parse(reader)
-        ) {
+        try (Reader reader = new InputStreamReader(file.getInputStream()); CSVParser parser = CSVFormat.DEFAULT.builder().setHeader().setSkipHeaderRecord(true).setIgnoreSurroundingSpaces(true).setTrim(true).setQuote('"').build().parse(reader)) {
 
-            Map<String, Integer> headerMap = parser.getHeaderMap()
-                    .entrySet()
-                    .stream()
-                    .collect(Collectors.toMap(
-                            e -> normalizeHeader(e.getKey()),
-                            Map.Entry::getValue,
-                            (a, b) -> a
-                    ));
+            Map<String, Integer> headerMap = parser.getHeaderMap().entrySet().stream().collect(Collectors.toMap(e -> normalizeHeader(e.getKey()), Map.Entry::getValue, (a, b) -> a));
 
             for (CSVRecord row : parser) {
 
@@ -145,7 +122,108 @@ public class LeadService {
         leadRepo.saveAll(reqList);
     }
 
-    public List<Lead> getLead(Long loginUserId) {
-    return leadRepo.findByUserId(loginUserId);
+    public Page<Lead> getLead(Long loginUserId, int page, int size, String firstName,String lastName,String email,String phone,String companyName,String website, String country, String industry, String leadstatus, String verifiedStatus,String verifiedOn, String campaignId, String campaignOfInstantly,String title) {
+        Pageable pageable = PageRequest.of(page, size);
+
+        return leadRepo.findLeadsWithFilters(loginUserId, firstName,lastName,email,phone,companyName,website ,country, industry, leadstatus, verifiedStatus,verifiedOn, campaignId, campaignOfInstantly,title, pageable);
+    }
+
+    @Transactional
+    public String bulkDelete(Long loginUserId, List<Integer> ids) {
+
+        if (ids == null || ids.isEmpty()) {
+            throw new RuntimeException("Please select leads");
+        }
+
+        List<Lead> leads = leadRepo.findByIdInAndUserId(ids, loginUserId);
+
+        if (leads.isEmpty()) {
+            throw new RuntimeException("No leads found");
+        }
+
+        leadRepo.deleteAll(leads);
+
+        return "Deleted leads: " + leads.size();
+    }
+
+    @Transactional
+    public String bulkEdit(Long loginUserId, BulkLeadEditRequest request) {
+
+        if (request.getIds() == null || request.getIds().isEmpty()) {
+            throw new RuntimeException("Please select leads");
+        }
+
+        List<Lead> leads = leadRepo.findByIdInAndUserId(request.getIds(), loginUserId);
+
+        if (leads.isEmpty()) {
+            throw new RuntimeException("No leads found");
+        }
+
+        for (Lead lead : leads) {
+
+            if (request.getFirstName() != null) {
+                lead.setFirstName(request.getFirstName());
+            }
+
+            if (request.getLastName() != null) {
+                lead.setLastName(request.getLastName());
+            }
+
+            if (request.getEmail() != null) {
+
+                Lead emailAndUserId = leadRepo.findByEmailAndUserId(request.getEmail(), loginUserId);
+                if (emailAndUserId != null) {
+                    throw new UserException("Email already exist :- " + request.getEmail());
+                }
+                lead.setEmail(request.getEmail());
+            }
+
+            if (request.getCountry() != null) {
+                lead.setCountry(request.getCountry());
+            }
+
+            if (request.getIndustry() != null) {
+                lead.setIndustry(request.getIndustry());
+            }
+
+            if (request.getPhone() != null) {
+                lead.setPhone(request.getPhone());
+            }
+
+            if (request.getCompanyName() != null) {
+                lead.setCompanyName(request.getCompanyName());
+            }
+
+            if (request.getVerifiedStatus() != null) {
+                lead.setVerifiedStatus(request.getVerifiedStatus());
+            }
+
+            if (request.getVerifiedOn() != null) {
+                lead.setVerifiedOn(request.getVerifiedOn());
+            }
+
+            if (request.getCampaignId() != null) {
+                lead.setCampaignId(request.getCampaignId());
+            }
+
+            if (request.getCampaignOfInstantly() != null) {
+                lead.setCampaignOfInstantly(request.getCampaignOfInstantly());
+            }
+
+            if (request.getTitle() != null) {
+                lead.setTitle(request.getTitle());
+            }
+
+            if (request.getWebsite() != null) {
+                lead.setWebsite(request.getWebsite());
+            }
+
+            if (request.getLeadstatus() != null) {
+                lead.setLeadstatus(request.getLeadstatus());
+            }
+        }
+
+        leadRepo.saveAll(leads);
+        return "Updated leads: " + leads.size();
     }
 }

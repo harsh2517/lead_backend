@@ -14,7 +14,7 @@ public class WebConfig implements WebMvcConfigurer {
         System.out.println("✅ CORS Config Applied");
         registry.addMapping("/**")
                 .allowedOrigins(
-                        "http://localhost:3000","https://lead-frontend-ejx3-ocg61yphm-harsh2517s-projects.vercel.app"
+                        "http://localhost:3000","https://lead-frontend-ejx3.vercel.app","https://lead-frontend-ejx3-ocg61yphm-harsh2517s-projects.vercel.app"
                 )
                 .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
                 .allowedHeaders("Authorization", "Content-Type", "X-Client-Identifier", "signature", "ts")
